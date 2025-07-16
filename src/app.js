@@ -25,20 +25,30 @@ app.use(
 
 app.use(express.json());
 
-// Configuración del transporter de email
+// Configuración del transporter de email con conexiones persistentes
 const emailTransporter = nodemailer.createTransport({
   service: 'Gmail',
+  pool: true, // Habilita conexiones persistentes
+  maxConnections: 5, // Número máximo de conexiones
+  maxMessages: 100, // Máximo de emails por conexión
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  tls: {
-    rejectUnauthorized: process.env.NODE_ENV === 'production',
-  },
+});
+
+// Health check endpoint para Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date() });
 });
 
 // Ruta de prueba del email (protegida)
 app.post('/api/contact', async (req, res) => {
+  // Establece timeout de 10 segundos
+  req.setTimeout(10000, () => {
+    res.status(504).json({ error: 'Timeout al enviar el mensaje' });
+  });
+
   try {
     const { user_name, user_email, user_phone, prefers_whatsapp, message } =
       req.body;
@@ -72,8 +82,12 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// Resto de la configuración...
-app.listen(PORT, () => {
+// Iniciar servidor con optimizaciones de timeout
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
   console.log('Allowed origins:', allowedOrigins);
 });
+
+// Optimización de conexiones Keep-Alive (importante para Render)
+server.keepAliveTimeout = 60000; // 60 segundos
+server.headersTimeout = 65000; // 65 segundos (debe ser > keepAliveTimeout)
